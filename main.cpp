@@ -70,48 +70,50 @@ typedef struct DiffuseTexture {
     GLubyte *data;
 } DiffuseTexture;
 
-const char * const vert_src =
-    "#version 330\n"
+const char * const vert_src = R"glsl(
+#version 330
 
-    "layout (location = 0) in vec3 v_position;\n"
-    "layout (location = 1) in vec3 v_normal;\n"
-    "layout (location = 2) in vec3 v_color;\n"
-    "layout (location = 3) in vec2 v_texcoord;\n"
+layout (location = 0) in vec3 v_position;
+layout (location = 1) in vec3 v_normal;
+layout (location = 2) in vec3 v_color;
+layout (location = 3) in vec2 v_texcoord;
 
-    "out vec3 f_color;\n"
-    "out vec2 f_texcoord;\n"
+out vec3 f_normal;
+out vec3 f_color;
+out vec2 f_texcoord;
 
-    "uniform mat4 world;\n"
-    "uniform mat4 persp;\n"
+uniform mat4 world;
+uniform mat4 persp;
 
-    "void main()\n"
-    "{\n"
-    "    f_color = v_color;\n"
-    "    f_texcoord = v_texcoord;\n"
-    "    vec4 model_pos = vec4(v_position, 1.0f);\n"
-    "    vec4 world_pos = world * model_pos;\n"
-    "    gl_Position = persp * world_pos;\n"
-    "}\n";
+void main() {
+    f_color = v_color;
+    f_texcoord = v_texcoord;
+    vec4 model_pos = vec4(v_position, 1.0f);
+    vec4 world_pos = world * model_pos;
+    gl_Position = persp * world_pos;
+};
+)glsl";
 
-const char * const frag_src =
-    "#version 330\n"
+const char * const frag_src = R"glsl(
+#version 330
 
-    "in vec3 f_color;\n"
-    "in vec2 f_texcoord;\n"
+in vec3 f_normal;
+in vec3 f_color;
+in vec2 f_texcoord;
 
-    "out vec4 color;\n"
+out vec4 color;
 
-    "uniform bool textured;\n"
-    "uniform sampler2D tex;\n"
+uniform bool textured;
+uniform sampler2D tex;
 
-    "void main()\n"
-    "{\n"
-    "    if (textured) {\n"
-    "        color = texture(tex, f_texcoord);\n"
-    "    } else {\n"
-    "        color = vec4(f_color, 1.0f);\n"
-    "    }\n"
-    "}\n";
+void main() {
+    if (textured) {
+        color = texture(tex, f_texcoord);
+    } else {
+        color = vec4(f_color, 1.0f);
+    }
+};
+)glsl";
 
 bool load_tga(DiffuseTexture *tex, std::string filename) {
     std::ifstream tgafile(filename.c_str(), std::ios::in | std::ios::binary);
