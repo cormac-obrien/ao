@@ -318,6 +318,8 @@ int main(int argc, char *argv[]) {
     /*
      * Load diffuse texture files
      */
+    float aniso = 1.0f;
+    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &aniso);
     for (size_t i = 0; i < materials.size(); i++) {
         if (!materials[i].diffuse_texname.empty()) {
             std::replace(materials[i].diffuse_texname.begin(), materials[i].diffuse_texname.end(), '\\', '/');
@@ -333,11 +335,13 @@ int main(int argc, char *argv[]) {
             glGenTextures(1, &tex_id);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, tex_id);
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex.data);
+            glGenerateMipmap(GL_TEXTURE_2D);
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, aniso);
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex.data);
             texture_ids.push_back(tex_id);
             INFO("texture %u: %s", tex_id, materials[i].diffuse_texname.c_str());
             delete[] tex.data;
@@ -401,7 +405,7 @@ int main(int argc, char *argv[]) {
             if (attrib.texcoords.size() > 0) {
                 for (size_t i = 0; i < 3; i++) {
                     texcoord[i][0] = attrib.texcoords[2 * idx[i].texcoord_index];
-                    texcoord[i][1] = 1.0 - attrib.texcoords[2 * idx[i].texcoord_index + 1];
+                    texcoord[i][1] = attrib.texcoords[2 * idx[i].texcoord_index + 1];
                 }
             }
 
@@ -410,8 +414,8 @@ int main(int argc, char *argv[]) {
                 diffuse[i] = materials[mat_id].diffuse[i];
             }
 
-            float normal_factor = 0.2;
-            float diffuse_factor = 0.8;
+            float normal_factor = 0.5;
+            float diffuse_factor = 0.5;
 
             float color[3][3];
             for (size_t color_id = 0; color_id < 3; color_id++) {
