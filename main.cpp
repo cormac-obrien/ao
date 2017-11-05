@@ -1,21 +1,22 @@
 /* Copyright © 2017 Cormac O'Brien
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy of
- * this software and associated documentation files (the "Software"), to deal in
- * the Software without restriction, including without limitation the rights to
- * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
- * the Software, and to permit persons to whom the Software is furnished to do so,
- * subject to the following conditions:
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
- * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
- * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 /*
@@ -40,23 +41,25 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.hpp"
 
-#define INFO(M, ...) fprintf(stderr, "[INFO] (%s:%d) " M "\n", __FILE__, \
-                             __LINE__, ##__VA_ARGS__)
+#define INFO(M, ...)                                                           \
+    fprintf(stderr, "[INFO] (%s:%d) " M "\n", __FILE__, __LINE__, ##__VA_ARGS__)
 
-#define ERROR(M, ...) fprintf(stderr, "[ERROR] (%s:%d) " M "\n", __FILE__, \
-                              __LINE__, ##__VA_ARGS__)
+#define ERROR(M, ...)                                                          \
+    fprintf(stderr, "[ERROR] (%s:%d) " M "\n", __FILE__, __LINE__,             \
+            ##__VA_ARGS__)
 
-#define ERROR_OPENGL(M, ...) do {                                       \
-        GLenum err;                                                     \
-        size_t ecnt = 0;                                                \
-        while ((err = glGetError()) != GL_NO_ERROR) {                   \
-            fprintf(stderr, "[OPENGL] (%s:%d) " M ": (%x)\n", __FILE__, \
-                    __LINE__, err, ##__VA_ARGS__);                      \
-            ecnt += 1;                                                  \
-        }                                                               \
-        if (ecnt > 0) {                                                 \
-            exit(EXIT_FAILURE);                                         \
-        }                                                               \
+#define ERROR_OPENGL(M, ...)                                                   \
+    do {                                                                       \
+        GLenum err;                                                            \
+        size_t ecnt = 0;                                                       \
+        while ((err = glGetError()) != GL_NO_ERROR) {                          \
+            fprintf(stderr, "[OPENGL] (%s:%d) " M ": (%x)\n", __FILE__,        \
+                    __LINE__, err, ##__VA_ARGS__);                             \
+            ecnt += 1;                                                         \
+        }                                                                      \
+        if (ecnt > 0) {                                                        \
+            exit(EXIT_FAILURE);                                                \
+        }                                                                      \
     } while (0);
 
 typedef struct __attribute__((packed)) Vertex {
@@ -77,7 +80,7 @@ typedef struct DiffuseTexture {
     GLubyte *data;
 } DiffuseTexture;
 
-const char * const vert_src = R"glsl(
+const char *const vert_src = R"glsl(
 #version 330
 
 layout (location = 0) in vec3 v_position;
@@ -98,7 +101,7 @@ void main() {
 };
 )glsl";
 
-const char * const frag_src = R"glsl(
+const char *const frag_src = R"glsl(
 #version 330
 
 in vec3 f_normal;
@@ -148,7 +151,6 @@ bool load_tga(DiffuseTexture *tex, std::string filename) {
 
     tgafile.read((char *)&header, sizeof header);
 
-
     if (header.image_type != 2) {
         ERROR("Only truecolor images supported");
         return false;
@@ -166,7 +168,8 @@ bool load_tga(DiffuseTexture *tex, std::string filename) {
     }
 
     if (header.image_spec.bpp != 24 && header.image_spec.bpp != 32) {
-        ERROR("Only 24bpp and 32bpp images supported (%" PRIu8 "bpp specified)", header.image_spec.bpp);
+        ERROR("Only 24bpp and 32bpp images supported (%" PRIu8 "bpp specified)",
+              header.image_spec.bpp);
         return false;
     }
 
@@ -191,12 +194,12 @@ bool load_tga(DiffuseTexture *tex, std::string filename) {
 
     for (size_t i = 0; i < w * h; i++) {
         if (bpp == 24) {
-            rgba[4 * i]     = tga_data[3 * i + 2];
+            rgba[4 * i] = tga_data[3 * i + 2];
             rgba[4 * i + 1] = tga_data[3 * i + 1];
             rgba[4 * i + 2] = tga_data[3 * i];
             rgba[4 * i + 3] = 255;
         } else if (bpp == 32) {
-            rgba[4 * i]     = tga_data[4 * i + 2];
+            rgba[4 * i] = tga_data[4 * i + 2];
             rgba[4 * i + 1] = tga_data[4 * i + 1];
             rgba[4 * i + 2] = tga_data[4 * i];
             rgba[4 * i + 3] = tga_data[4 * i + 3];
@@ -217,8 +220,7 @@ bool load_tga(DiffuseTexture *tex, std::string filename) {
     return true;
 }
 
-GLuint new_shader(const GLenum type, const char *src)
-{
+GLuint new_shader(const GLenum type, const char *src) {
     GLuint shader = glCreateShader(type);
     const GLchar **srcaddr = (const GLchar **)&src;
     glShaderSource(shader, 1, srcaddr, NULL);
@@ -230,7 +232,7 @@ GLuint new_shader(const GLenum type, const char *src)
         GLint loglen;
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &loglen);
 
-        GLchar *log = (GLchar *)calloc(loglen + 1, sizeof (*log));
+        GLchar *log = (GLchar *)calloc(loglen + 1, sizeof(*log));
         glGetShaderInfoLog(shader, loglen, NULL, log);
         fprintf(stderr, "Failed to compile shader:\n%s\n", log);
         free(log);
@@ -240,8 +242,7 @@ GLuint new_shader(const GLenum type, const char *src)
     return shader;
 }
 
-GLuint new_program(size_t shader_count, const GLuint *shaders)
-{
+GLuint new_program(size_t shader_count, const GLuint *shaders) {
     GLuint program = glCreateProgram();
     ERROR_OPENGL("Couldn't create a new shader program.");
 
@@ -259,7 +260,7 @@ GLuint new_program(size_t shader_count, const GLuint *shaders)
         GLint loglen;
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &loglen);
 
-        GLchar *log = (GLchar *)calloc(loglen + 1, sizeof (*log));
+        GLchar *log = (GLchar *)calloc(loglen + 1, sizeof(*log));
         glGetProgramInfoLog(program, loglen, NULL, log);
         fprintf(stderr, "Failed to link program:\n%s\n", log);
         free(log);
@@ -271,7 +272,8 @@ GLuint new_program(size_t shader_count, const GLuint *shaders)
 int main(int argc, char *argv[]) {
     glfwInit();
     glfwWindowHint(GLFW_SAMPLES, 16);
-    GLFWwindow *window = glfwCreateWindow(1920, 1080, "objview", glfwGetPrimaryMonitor(), NULL);
+    GLFWwindow *window =
+        glfwCreateWindow(1920, 1080, "objview", glfwGetPrimaryMonitor(), NULL);
     glfwMakeContextCurrent(window);
 
     if (gl3wInit() != 0) {
@@ -305,7 +307,8 @@ int main(int argc, char *argv[]) {
     std::vector<GLuint> texture_ids;
     std::string err_string;
 
-    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err_string, "crytek-sponza/sponza.obj", "crytek-sponza/");
+    bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err_string,
+                                "crytek-sponza/sponza.obj", "crytek-sponza/");
     if (!err_string.empty()) {
         INFO("Possible error while loading OBJ file:\n%s", err_string.c_str());
     }
@@ -327,10 +330,13 @@ int main(int argc, char *argv[]) {
     glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &aniso);
     for (size_t i = 0; i < materials.size(); i++) {
         if (!materials[i].diffuse_texname.empty()) {
-            std::replace(materials[i].diffuse_texname.begin(), materials[i].diffuse_texname.end(), '\\', '/');
-            printf("materials[%zu].diffuse_texname = %s\n", i, materials[i].diffuse_texname.c_str());
+            std::replace(materials[i].diffuse_texname.begin(),
+                         materials[i].diffuse_texname.end(), '\\', '/');
+            printf("materials[%zu].diffuse_texname = %s\n", i,
+                   materials[i].diffuse_texname.c_str());
             DiffuseTexture tex;
-            bool status = load_tga(&tex, "crytek-sponza/" + materials[i].diffuse_texname);
+            bool status =
+                load_tga(&tex, "crytek-sponza/" + materials[i].diffuse_texname);
             if (!status) {
                 ERROR("Failed to load texture");
                 exit(EXIT_FAILURE);
@@ -340,15 +346,18 @@ int main(int argc, char *argv[]) {
             glGenTextures(1, &tex_id);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, tex_id);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex.data);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex.width, tex.height, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, tex.data);
             glGenerateMipmap(GL_TEXTURE_2D);
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, aniso);
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                            GL_LINEAR_MIPMAP_LINEAR);
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
             texture_ids.push_back(tex_id);
-            INFO("texture %u: %s", tex_id, materials[i].diffuse_texname.c_str());
+            INFO("texture %u: %s", tex_id,
+                 materials[i].diffuse_texname.c_str());
             delete[] tex.data;
         } else {
             printf("materials[%zu].diffuse_texname: no texture\n", i);
@@ -370,7 +379,8 @@ int main(int argc, char *argv[]) {
         // std::vector<float> vertex_data;
         std::vector<Vertex> vertex_data;
 
-        for (size_t face_id = 0; face_id < shapes[s].mesh.indices.size() / 3; face_id++) {
+        for (size_t face_id = 0; face_id < shapes[s].mesh.indices.size() / 3;
+             face_id++) {
             Vertex verts[3];
             tinyobj::index_t idx[3];
             for (size_t i = 0; i < 3; i++) {
@@ -379,7 +389,8 @@ int main(int argc, char *argv[]) {
 
             int mat_id = shapes[s].mesh.material_ids[face_id];
             if (mat_id < 0 || mat_id > static_cast<int>(materials.size())) {
-                ERROR("Bad material ID for shape \"%s\"", shapes[s].name.c_str());
+                ERROR("Bad material ID for shape \"%s\"",
+                      shapes[s].name.c_str());
             }
 
             /*
@@ -387,7 +398,9 @@ int main(int argc, char *argv[]) {
              */
             for (size_t pos_id = 0; pos_id < 3; pos_id++) {
                 for (size_t component = 0; component < 3; component++) {
-                    verts[pos_id].position[component] = attrib.vertices[3 * idx[pos_id].vertex_index + component];
+                    verts[pos_id].position[component] =
+                        attrib
+                            .vertices[3 * idx[pos_id].vertex_index + component];
                 }
             }
 
@@ -396,12 +409,15 @@ int main(int argc, char *argv[]) {
              */
             if (attrib.normals.size() > 0) {
                 for (size_t normal_id = 0; normal_id < 3; normal_id++) {
-                    for(size_t component = 0; component < 3; component++) {
-                        verts[normal_id].normal[component] = attrib.vertices[3 * idx[normal_id].vertex_index + component];
+                    for (size_t component = 0; component < 3; component++) {
+                        verts[normal_id].normal[component] =
+                            attrib.vertices[3 * idx[normal_id].vertex_index +
+                                            component];
                     }
                 }
             } else {
-                ERROR("OBJ file does not provide normals and normal calculation is not implemented.");
+                ERROR("OBJ file does not provide normals and normal "
+                      "calculation is not implemented.");
             }
 
             /*
@@ -409,8 +425,10 @@ int main(int argc, char *argv[]) {
              */
             if (attrib.texcoords.size() > 0) {
                 for (size_t i = 0; i < 3; i++) {
-                    verts[i].texcoord[0] = attrib.texcoords[2 * idx[i].texcoord_index];
-                    verts[i].texcoord[1] = attrib.texcoords[2 * idx[i].texcoord_index + 1];
+                    verts[i].texcoord[0] =
+                        attrib.texcoords[2 * idx[i].texcoord_index];
+                    verts[i].texcoord[1] =
+                        attrib.texcoords[2 * idx[i].texcoord_index + 1];
                 }
             }
 
@@ -436,7 +454,8 @@ int main(int argc, char *argv[]) {
         if (vertex_data.size() > 0) {
             glGenBuffers(1, &o.vbo);
             glBindBuffer(GL_ARRAY_BUFFER, o.vbo);
-            glBufferData(GL_ARRAY_BUFFER, vertex_data.size() * sizeof (Vertex), &vertex_data.at(0), GL_STATIC_DRAW);
+            glBufferData(GL_ARRAY_BUFFER, vertex_data.size() * sizeof(Vertex),
+                         &vertex_data.at(0), GL_STATIC_DRAW);
         }
 
         o.tri_count = vertex_data.size() / 3;
@@ -538,9 +557,7 @@ int main(int argc, char *argv[]) {
         glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
 
         glm::mat4 perspective = glm::perspective(
-            90.0f,
-            (float)framebuffer_width / (float)framebuffer_height,
-            1.0f,
+            90.0f, (float)framebuffer_width / (float)framebuffer_height, 1.0f,
             1024.0f);
         glUniformMatrix4fv(persp_unif, 1, GL_FALSE, &perspective[0][0]);
 
@@ -554,9 +571,15 @@ int main(int argc, char *argv[]) {
         for (size_t i = 0; i < draw_objects.size(); i++) {
             glBindBuffer(GL_ARRAY_BUFFER, draw_objects[i].vbo);
 
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof (Vertex), reinterpret_cast<void *>(offsetof(Vertex, position)));
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof (Vertex), reinterpret_cast<void *>(offsetof(Vertex, normal)));
-            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof (Vertex), reinterpret_cast<void *>(offsetof(Vertex, texcoord)));
+            glVertexAttribPointer(
+                0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                reinterpret_cast<void *>(offsetof(Vertex, position)));
+            glVertexAttribPointer(
+                1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                reinterpret_cast<void *>(offsetof(Vertex, normal)));
+            glVertexAttribPointer(
+                2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                reinterpret_cast<void *>(offsetof(Vertex, texcoord)));
 
             GLuint tex_id = texture_ids[draw_objects[i].material_id];
             if (tex_id != 0) {
@@ -564,7 +587,8 @@ int main(int argc, char *argv[]) {
             } else {
                 glUniform1i(textured_unif, GL_FALSE);
             }
-            glBindTexture(GL_TEXTURE_2D, texture_ids[draw_objects[i].material_id]);
+            glBindTexture(GL_TEXTURE_2D,
+                          texture_ids[draw_objects[i].material_id]);
 
             glDrawArrays(GL_TRIANGLES, 0, draw_objects[i].tri_count * 3);
         }
