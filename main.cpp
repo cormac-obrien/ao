@@ -19,11 +19,6 @@
  * SOFTWARE.
  */
 
-/*
- * TODO:
- * - per-face texturing
- */
-
 #include <algorithm>
 #include <cinttypes>
 #include <cstddef>
