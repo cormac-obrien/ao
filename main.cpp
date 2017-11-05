@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <map>
@@ -58,6 +59,12 @@
         }                                                               \
     } while (0);
 
+typedef struct __attribute__((packed)) Vertex {
+    float position[3];
+    float normal[3];
+    float texcoord[2];
+} Vertex;
+
 typedef struct DrawObject {
     GLuint vbo;
     size_t tri_count;
@@ -75,18 +82,15 @@ const char * const vert_src = R"glsl(
 
 layout (location = 0) in vec3 v_position;
 layout (location = 1) in vec3 v_normal;
-layout (location = 2) in vec3 v_color;
-layout (location = 3) in vec2 v_texcoord;
+layout (location = 2) in vec2 v_texcoord;
 
 out vec3 f_normal;
-out vec3 f_color;
 out vec2 f_texcoord;
 
 uniform mat4 world;
 uniform mat4 persp;
 
 void main() {
-    f_color = v_color;
     f_texcoord = v_texcoord;
     vec4 model_pos = vec4(v_position, 1.0f);
     vec4 world_pos = world * model_pos;
@@ -98,7 +102,6 @@ const char * const frag_src = R"glsl(
 #version 330
 
 in vec3 f_normal;
-in vec3 f_color;
 in vec2 f_texcoord;
 
 out vec4 color;
@@ -110,7 +113,7 @@ void main() {
     if (textured) {
         color = texture(tex, f_texcoord);
     } else {
-        color = vec4(f_color, 1.0f);
+        color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
     }
 };
 )glsl";
@@ -361,11 +364,14 @@ int main(int argc, char *argv[]) {
         DrawObject o;
 
         /*
-         * Vertex data is organized as [x y z | r θ ϕ | r g b | u v]
+         * Vertex data is organized as [x y z    | a b c  | u v]
+         *                              position | normal | texcoords
          */
-        std::vector<float> vertex_data;
+        // std::vector<float> vertex_data;
+        std::vector<Vertex> vertex_data;
 
         for (size_t face_id = 0; face_id < shapes[s].mesh.indices.size() / 3; face_id++) {
+            Vertex verts[3];
             tinyobj::index_t idx[3];
             for (size_t i = 0; i < 3; i++) {
                 idx[i] = shapes[s].mesh.indices[3 * face_id + i];
@@ -379,21 +385,19 @@ int main(int argc, char *argv[]) {
             /*
              * Sequence position data
              */
-            float positions[3][3] = {{0.0}};
             for (size_t pos_id = 0; pos_id < 3; pos_id++) {
                 for (size_t component = 0; component < 3; component++) {
-                    positions[pos_id][component] = attrib.vertices[3 * idx[pos_id].vertex_index + component];
+                    verts[pos_id].position[component] = attrib.vertices[3 * idx[pos_id].vertex_index + component];
                 }
             }
 
             /*
              * Sequence surface normals
              */
-            float normals[3][3];
             if (attrib.normals.size() > 0) {
                 for (size_t normal_id = 0; normal_id < 3; normal_id++) {
                     for(size_t component = 0; component < 3; component++) {
-                        normals[normal_id][component] = attrib.normals[3 * idx[normal_id].normal_index + component];
+                        verts[normal_id].normal[component] = attrib.vertices[3 * idx[normal_id].vertex_index + component];
                     }
                 }
             } else {
@@ -403,11 +407,10 @@ int main(int argc, char *argv[]) {
             /*
              * Sequence texture coordinates
              */
-            float texcoord[3][2] = {{0.0}};
             if (attrib.texcoords.size() > 0) {
                 for (size_t i = 0; i < 3; i++) {
-                    texcoord[i][0] = attrib.texcoords[2 * idx[i].texcoord_index];
-                    texcoord[i][1] = attrib.texcoords[2 * idx[i].texcoord_index + 1];
+                    verts[i].texcoord[0] = attrib.texcoords[2 * idx[i].texcoord_index];
+                    verts[i].texcoord[1] = attrib.texcoords[2 * idx[i].texcoord_index + 1];
                 }
             }
 
@@ -416,49 +419,11 @@ int main(int argc, char *argv[]) {
                 diffuse[i] = materials[mat_id].diffuse[i];
             }
 
-            float normal_factor = 0.5;
-            float diffuse_factor = 0.5;
-
-            float color[3][3];
-            for (size_t color_id = 0; color_id < 3; color_id++) {
-                float len_squared = 0.0;
-                for (size_t component = 0; component < 3; component++) {
-                    color[color_id][component] = normals[color_id][component] * normal_factor
-                                               + diffuse[component] * diffuse_factor;
-                    len_squared += color[color_id][component] * color[color_id][component];
-                }
-
-                /*
-                 * Normalize vertex colors
-                 */
-                if (len_squared > 0.0) {
-                    float len = sqrtf(len_squared);
-
-                    for (size_t component = 0; component < 3; component++) {
-                        color[color_id][component] /= len;
-                    }
-                }
-            }
-
             /*
              * Append vertex data
              */
             for (size_t i = 0; i < 3; i++) {
-                for (size_t component = 0; component < 3; component++) {
-                    vertex_data.push_back(positions[i][component]);
-                }
-
-                for (size_t component = 0; component < 3; component++) {
-                    vertex_data.push_back(normals[i][component]);
-                }
-
-                for (size_t component = 0; component < 3; component++) {
-                    vertex_data.push_back(color[i][component]);
-                }
-
-                for (size_t component = 0; component < 2; component++) {
-                    vertex_data.push_back(texcoord[i][component]);
-                }
+                vertex_data.push_back(verts[i]);
             }
 
             if (shapes[s].mesh.material_ids.size() > 0) {
@@ -471,10 +436,10 @@ int main(int argc, char *argv[]) {
         if (vertex_data.size() > 0) {
             glGenBuffers(1, &o.vbo);
             glBindBuffer(GL_ARRAY_BUFFER, o.vbo);
-            glBufferData(GL_ARRAY_BUFFER, vertex_data.size() * sizeof (float), &vertex_data.at(0), GL_STATIC_DRAW);
+            glBufferData(GL_ARRAY_BUFFER, vertex_data.size() * sizeof (Vertex), &vertex_data.at(0), GL_STATIC_DRAW);
         }
 
-        o.tri_count = vertex_data.size() / (3 + 3 + 3 + 2) / 3;
+        o.tri_count = vertex_data.size() / 3;
         draw_objects.push_back(o);
 
         /*
@@ -502,19 +467,14 @@ int main(int argc, char *argv[]) {
     /*
      * 0 position (3 floats, 12 bytes)
      * 1 normal   (3 floats, 12 bytes)
-     * 2 color    (3 floats, 12 bytes)
-     * 3 texcoord (2 floats,  8 bytes)
-     *
-     * normal   + color    + texcoord = 32 bytes
-     * color    + texcoord + position = 32 bytes
-     * texcoord + position + normal   = 32 bytes
-     * position + normal   + color    = 36 bytes
+     * 2 texcoord (2 floats,  8 bytes)
+     * ------------------------------
+     *             8 floats, 32 bytes
      */
 
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
-    glEnableVertexAttribArray(3);
 
     float pos[3] = {0.0f};
     float angle[3] = {0.0f};
@@ -594,10 +554,9 @@ int main(int argc, char *argv[]) {
         for (size_t i = 0; i < draw_objects.size(); i++) {
             glBindBuffer(GL_ARRAY_BUFFER, draw_objects[i].vbo);
 
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 44, reinterpret_cast<void *>(0));
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 44, reinterpret_cast<void *>(12));
-            glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 44, reinterpret_cast<void *>(24));
-            glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 44, reinterpret_cast<void *>(36));
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof (Vertex), reinterpret_cast<void *>(offsetof(Vertex, position)));
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof (Vertex), reinterpret_cast<void *>(offsetof(Vertex, normal)));
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof (Vertex), reinterpret_cast<void *>(offsetof(Vertex, texcoord)));
 
             GLuint tex_id = texture_ids[draw_objects[i].material_id];
             if (tex_id != 0) {
