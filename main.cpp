@@ -370,14 +370,14 @@ int main(int argc, char *argv[]) {
      */
     std::vector<DrawObject> draw_objects;
     for (size_t s = 0; s < shapes.size(); s++) {
-        DrawObject o;
+        // INFO("Loading shape %s", shapes[s].name.c_str());
 
         /*
-         * Vertex data is organized as [x y z    | a b c  | u v]
-         *                              position | normal | texcoords
+         * Shapes can have multiple materials, so generate one DrawObject and
+         * vertex buffer per material in each object
          */
-        // std::vector<float> vertex_data;
-        std::vector<Vertex> vertex_data;
+        std::vector<DrawObject> face_objects;
+        std::vector<std::vector<Vertex>> vertex_data;
 
         for (size_t face_id = 0; face_id < shapes[s].mesh.indices.size() / 3;
              face_id++) {
@@ -432,38 +432,56 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            float diffuse[3] = {0.0};
-            for (size_t i = 0; i < 3; i++) {
-                diffuse[i] = materials[mat_id].diffuse[i];
-            }
-
             /*
              * Append vertex data
              */
-            for (size_t i = 0; i < 3; i++) {
-                vertex_data.push_back(verts[i]);
-            }
+            std::vector<DrawObject>::iterator it =
+                std::find_if(face_objects.begin(), face_objects.end(),
+                             [mat_id](DrawObject o) -> bool {
+                                 return mat_id == (int)o.material_id;
+                             });
 
-            if (shapes[s].mesh.material_ids.size() > 0) {
-                o.material_id = shapes[s].mesh.material_ids[0];
+            if (it == face_objects.end()) {
+                // INFO("No object for this material, appending");
+
+                DrawObject o = DrawObject();
+                o.material_id = mat_id;
+                face_objects.push_back(o);
+
+                std::vector<Vertex> vdata;
+                for (size_t i = 0; i < 3; i++) {
+                    vdata.push_back(verts[i]);
+                }
+                vertex_data.push_back(vdata);
             } else {
-                o.material_id = materials.size() - 1;
+                size_t obj_index = it - face_objects.begin();
+                // INFO("Object index = %zu", obj_index);
+
+                for (size_t i = 0; i < 3; i++) {
+                    vertex_data[obj_index].push_back(verts[i]);
+                }
             }
         }
 
-        if (vertex_data.size() > 0) {
-            glGenBuffers(1, &o.vbo);
-            glBindBuffer(GL_ARRAY_BUFFER, o.vbo);
-            glBufferData(GL_ARRAY_BUFFER, vertex_data.size() * sizeof(Vertex),
-                         &vertex_data.at(0), GL_STATIC_DRAW);
+        for (size_t o = 0; o < face_objects.size(); o++) {
+            if (vertex_data.size() > 0) {
+                glGenBuffers(1, &face_objects[o].vbo);
+                glBindBuffer(GL_ARRAY_BUFFER, face_objects[o].vbo);
+                glBufferData(GL_ARRAY_BUFFER,
+                             vertex_data[o].size() * sizeof(Vertex),
+                             &vertex_data[o].at(0), GL_STATIC_DRAW);
+                face_objects[o].tri_count = vertex_data[o].size() / 3;
+            }
         }
 
-        o.tri_count = vertex_data.size() / 3;
-        draw_objects.push_back(o);
+        draw_objects.insert(draw_objects.end(), face_objects.begin(),
+                            face_objects.end());
 
         /*
          * Data has been pushed to the GPU, make sure it's deallocated
          */
+        face_objects.clear();
+        face_objects.shrink_to_fit();
         vertex_data.clear();
         vertex_data.shrink_to_fit();
     }
@@ -482,14 +500,6 @@ int main(int argc, char *argv[]) {
     GLuint vao;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
-
-    /*
-     * 0 position (3 floats, 12 bytes)
-     * 1 normal   (3 floats, 12 bytes)
-     * 2 texcoord (2 floats,  8 bytes)
-     * ------------------------------
-     *             8 floats, 32 bytes
-     */
 
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
