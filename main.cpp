@@ -240,12 +240,7 @@ int main(int argc, char *argv[]) {
 
     std::vector<Texture> textures;
     for (size_t i = 0; i < materials.size(); i++) {
-        Texture tex = Texture {
-            .diff = 0,
-            .mask = 0,
-            .bump = 0,
-            .spec = 0
-        };
+        Texture tex = Texture{.diff = 0, .mask = 0, .bump = 0, .spec = 0};
 
         if (!materials[i].diffuse_texname.empty()) {
             std::string path = "crytek-sponza/" + materials[i].diffuse_texname;
@@ -285,9 +280,9 @@ int main(int argc, char *argv[]) {
             std::replace(path.begin(), path.end(), '\\', '/');
 
             GLuint tex_id = SOIL_load_OGL_texture(
-                                                  path.c_str(), 0, 0,
-                                                  SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
-                                                  SOIL_FLAG_INVERT_Y);
+                path.c_str(), 0, 0,
+                SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
+                    SOIL_FLAG_INVERT_Y);
 
             if (tex_id == 0) {
                 ERROR("Failed to load bump texture from %s", path.c_str());
@@ -301,9 +296,9 @@ int main(int argc, char *argv[]) {
             std::replace(path.begin(), path.end(), '\\', '/');
 
             GLuint tex_id = SOIL_load_OGL_texture(
-                                                  path.c_str(), 0, 0,
-                                                  SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
-                                                  SOIL_FLAG_INVERT_Y);
+                path.c_str(), 0, 0,
+                SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
+                    SOIL_FLAG_INVERT_Y);
 
             if (tex_id == 0) {
                 ERROR("Failed to load specular texture from %s", path.c_str());
@@ -520,9 +515,11 @@ int main(int argc, char *argv[]) {
         int framebuffer_width, framebuffer_height;
         glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
 
-        glm::mat4 perspective = glm::perspective(
-            90.0f, (float)framebuffer_width / (float)framebuffer_height, 1.0f,
-            1024.0f);
+        float fovy = 0.5f * (float)M_PI;
+        float aspect = (float)(framebuffer_width / framebuffer_height);
+        float z_near = 1.0f;
+        float z_far = 1024.0f;
+        glm::mat4 perspective = glm::perspective(fovy, aspect, z_near, z_far);
         glUniformMatrix4fv(persp_unif, 1, GL_FALSE, &perspective[0][0]);
 
         /*
