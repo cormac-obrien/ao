@@ -113,12 +113,16 @@ in vec2 f_texcoord;
 
 out vec4 color;
 
-uniform bool textured;
-uniform sampler2D tex;
+uniform bool diff;
+uniform bool mask;
+uniform sampler2D diff_tex;
+uniform sampler2D mask_tex;
 
 void main() {
-    if (textured) {
-        color = texture(tex, f_texcoord);
+    if (mask && texture(mask_tex, f_texcoord).r < 0.5) {
+        discard;
+    } else if (diff) {
+        color = texture(diff_tex, f_texcoord);
     } else {
         color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
     }
@@ -236,7 +240,12 @@ int main(int argc, char *argv[]) {
 
     std::vector<Texture> textures;
     for (size_t i = 0; i < materials.size(); i++) {
-        Texture tex;
+        Texture tex = Texture {
+            .diff = 0,
+            .mask = 0,
+            .bump = 0,
+            .spec = 0
+        };
 
         if (!materials[i].diffuse_texname.empty()) {
             std::string path = "crytek-sponza/" + materials[i].diffuse_texname;
@@ -434,7 +443,13 @@ int main(int argc, char *argv[]) {
 
     GLuint world_unif = glGetUniformLocation(prog, "world");
     GLuint persp_unif = glGetUniformLocation(prog, "persp");
-    GLuint textured_unif = glGetUniformLocation(prog, "textured");
+    GLuint diff_unif = glGetUniformLocation(prog, "diff");
+    GLuint mask_unif = glGetUniformLocation(prog, "mask");
+    GLuint diff_tex_unif = glGetUniformLocation(prog, "diff_tex");
+    GLuint mask_tex_unif = glGetUniformLocation(prog, "mask_tex");
+
+    glUniform1i(diff_tex_unif, 0);
+    glUniform1i(mask_tex_unif, 1);
 
     GLuint vao;
     glGenVertexArrays(1, &vao);
@@ -530,13 +545,15 @@ int main(int argc, char *argv[]) {
                 2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
                 reinterpret_cast<void *>(offsetof(Vertex, texcoord)));
 
-            GLuint tex_id = textures[draw_objects[i].material_id].diff;
-            if (tex_id != 0) {
-                glUniform1i(textured_unif, GL_TRUE);
-            } else {
-                glUniform1i(textured_unif, GL_FALSE);
-            }
-            glBindTexture(GL_TEXTURE_2D, tex_id);
+            Texture tex = textures[draw_objects[i].material_id];
+
+            glActiveTexture(GL_TEXTURE0);
+            glUniform1i(diff_unif, tex.diff == 0 ? GL_FALSE : GL_TRUE);
+            glBindTexture(GL_TEXTURE_2D, tex.diff);
+
+            glActiveTexture(GL_TEXTURE1);
+            glUniform1i(mask_unif, tex.mask == 0 ? GL_FALSE : GL_TRUE);
+            glBindTexture(GL_TEXTURE_2D, tex.mask);
 
             glDrawArrays(GL_TRIANGLES, 0, draw_objects[i].tri_count * 3);
         }
