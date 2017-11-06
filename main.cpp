@@ -234,13 +234,13 @@ int main(int argc, char *argv[]) {
     float aniso = 1.0f;
     glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &aniso);
 
+    std::vector<Texture> textures;
     for (size_t i = 0; i < materials.size(); i++) {
-        if (!materials[i].diffuse_texname.empty()) {
-            std::replace(materials[i].diffuse_texname.begin(),
-                         materials[i].diffuse_texname.end(), '\\', '/');
+        Texture tex;
 
+        if (!materials[i].diffuse_texname.empty()) {
             std::string path = "crytek-sponza/" + materials[i].diffuse_texname;
-            printf("materials[%zu].diffuse_texname = %s\n", i, path.c_str());
+            std::replace(path.begin(), path.end(), '\\', '/');
 
             GLuint tex_id = SOIL_load_OGL_texture(
                 path.c_str(), 0, 0,
@@ -249,13 +249,61 @@ int main(int argc, char *argv[]) {
 
             if (tex_id == 0) {
                 ERROR("Failed to load diffuse texture from %s", path.c_str());
+                exit(EXIT_FAILURE);
             }
 
-            texture_ids.push_back(tex_id);
-        } else {
-            printf("materials[%zu].diffuse_texname: no texture\n", i);
-            texture_ids.push_back(0);
+            tex.diff = tex_id;
         }
+
+        if (!materials[i].alpha_texname.empty()) {
+            std::string path = "crytek-sponza/" + materials[i].alpha_texname;
+            std::replace(path.begin(), path.end(), '\\', '/');
+
+            GLuint tex_id = SOIL_load_OGL_texture(
+                path.c_str(), 0, 0,
+                SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
+                    SOIL_FLAG_INVERT_Y);
+
+            if (tex_id == 0) {
+                ERROR("Failed to load mask texture from %s", path.c_str());
+            }
+
+            tex.mask = tex_id;
+        }
+
+        if (!materials[i].bump_texname.empty()) {
+            std::string path = "crytek-sponza/" + materials[i].bump_texname;
+            std::replace(path.begin(), path.end(), '\\', '/');
+
+            GLuint tex_id = SOIL_load_OGL_texture(
+                                                  path.c_str(), 0, 0,
+                                                  SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
+                                                  SOIL_FLAG_INVERT_Y);
+
+            if (tex_id == 0) {
+                ERROR("Failed to load bump texture from %s", path.c_str());
+            }
+
+            tex.bump = tex_id;
+        }
+
+        if (!materials[i].specular_texname.empty()) {
+            std::string path = "crytek-sponza/" + materials[i].specular_texname;
+            std::replace(path.begin(), path.end(), '\\', '/');
+
+            GLuint tex_id = SOIL_load_OGL_texture(
+                                                  path.c_str(), 0, 0,
+                                                  SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
+                                                  SOIL_FLAG_INVERT_Y);
+
+            if (tex_id == 0) {
+                ERROR("Failed to load specular texture from %s", path.c_str());
+            }
+
+            tex.spec = tex_id;
+        }
+
+        textures.push_back(tex);
     }
 
     /*
@@ -482,14 +530,13 @@ int main(int argc, char *argv[]) {
                 2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
                 reinterpret_cast<void *>(offsetof(Vertex, texcoord)));
 
-            GLuint tex_id = texture_ids[draw_objects[i].material_id];
+            GLuint tex_id = textures[draw_objects[i].material_id].diff;
             if (tex_id != 0) {
                 glUniform1i(textured_unif, GL_TRUE);
             } else {
                 glUniform1i(textured_unif, GL_FALSE);
             }
-            glBindTexture(GL_TEXTURE_2D,
-                          texture_ids[draw_objects[i].material_id]);
+            glBindTexture(GL_TEXTURE_2D, tex_id);
 
             glDrawArrays(GL_TRIANGLES, 0, draw_objects[i].tri_count * 3);
         }
