@@ -516,7 +516,7 @@ int main(int argc, char *argv[]) {
         glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
 
         float fovy = 0.5f * (float)M_PI;
-        float aspect = (float)(framebuffer_width / framebuffer_height);
+        float aspect = (float)framebuffer_width / (float)framebuffer_height;
         float z_near = 1.0f;
         float z_far = 1024.0f;
         glm::mat4 perspective = glm::perspective(fovy, aspect, z_near, z_far);
