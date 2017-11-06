@@ -3,7 +3,7 @@ CXX=clang
 
 CFLAGS=-std=c11 -Wall -Wextra
 CXXFLAGS=-std=c++11 -Wall -Wextra
-LDFLAGS=-lGL -lglfw -lm -ldl -lstdc++
+LDFLAGS=-lGL -lglfw -lm -ldl -lstdc++ -lSOIL
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

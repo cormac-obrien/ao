@@ -33,6 +33,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <SOIL/SOIL.h>
+
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.hpp"
 
@@ -75,6 +77,13 @@ typedef struct DiffuseTexture {
     GLubyte *data;
 } DiffuseTexture;
 
+typedef struct Texture {
+    GLuint diff;
+    GLuint mask;
+    GLuint bump;
+    GLuint spec;
+} Texture;
+
 const char *const vert_src = R"glsl(
 #version 330
 
@@ -115,105 +124,6 @@ void main() {
     }
 };
 )glsl";
-
-bool load_tga(DiffuseTexture *tex, std::string filename) {
-    std::ifstream tgafile(filename.c_str(), std::ios::in | std::ios::binary);
-    if (!tgafile.is_open()) {
-        ERROR("Couldn't open \"%s\"", filename.c_str());
-        return false;
-    }
-
-    struct __attribute__((packed)) {
-        uint8_t id_len;
-        uint8_t colormap_type;
-        uint8_t image_type;
-
-        struct __attribute__((packed)) {
-            uint16_t first;
-            uint16_t len;
-            uint8_t bpp;
-        } colormap_spec;
-
-        struct __attribute__((packed)) {
-            uint16_t x_orig;
-            uint16_t y_orig;
-            uint16_t width;
-            uint16_t height;
-            uint8_t bpp;
-            uint8_t desc;
-        } image_spec;
-    } header;
-
-    tgafile.read((char *)&header, sizeof header);
-
-    if (header.image_type != 2) {
-        ERROR("Only truecolor images supported");
-        return false;
-    }
-
-    if (header.colormap_type != 0) {
-        ERROR("Colormap support not implemented");
-        return false;
-    }
-
-    uint8_t *image_id = nullptr;
-    if (header.id_len > 0) {
-        image_id = new uint8_t[header.id_len];
-        tgafile.read((char *)&image_id, sizeof image_id);
-    }
-
-    if (header.image_spec.bpp != 24 && header.image_spec.bpp != 32) {
-        ERROR("Only 24bpp and 32bpp images supported (%" PRIu8 "bpp specified)",
-              header.image_spec.bpp);
-        return false;
-    }
-
-    uint16_t w = header.image_spec.width;
-    uint16_t h = header.image_spec.height;
-    uint8_t bpp = header.image_spec.bpp;
-    INFO("%" PRIu16 "x%" PRIu16 "x%" PRIu8 "", w, h, bpp);
-
-    uint8_t *tga_data = new uint8_t[w * h * bpp / 8];
-    if (tga_data == nullptr) {
-        ERROR("TGA data allocation failed");
-        return false;
-    }
-
-    tgafile.read((char *)tga_data, w * h * bpp / 8);
-
-    GLubyte *rgba = new GLubyte[w * h * 4];
-    if (rgba == nullptr) {
-        ERROR("RGBA data allocation failed");
-        return false;
-    }
-
-    for (size_t i = 0; i < w * h; i++) {
-        if (bpp == 24) {
-            rgba[4 * i] = tga_data[3 * i + 2];
-            rgba[4 * i + 1] = tga_data[3 * i + 1];
-            rgba[4 * i + 2] = tga_data[3 * i];
-            rgba[4 * i + 3] = 255;
-        } else if (bpp == 32) {
-            rgba[4 * i] = tga_data[4 * i + 2];
-            rgba[4 * i + 1] = tga_data[4 * i + 1];
-            rgba[4 * i + 2] = tga_data[4 * i];
-            rgba[4 * i + 3] = tga_data[4 * i + 3];
-        } else {
-            ERROR("Bad bpp value");
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    delete[] tga_data;
-    delete[] image_id;
-    tgafile.close();
-
-    tex->width = w;
-    tex->height = h;
-    tex->data = rgba;
-
-    return true;
-}
 
 GLuint new_shader(const GLenum type, const char *src) {
     GLuint shader = glCreateShader(type);
@@ -323,37 +233,25 @@ int main(int argc, char *argv[]) {
      */
     float aniso = 1.0f;
     glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &aniso);
+
     for (size_t i = 0; i < materials.size(); i++) {
         if (!materials[i].diffuse_texname.empty()) {
             std::replace(materials[i].diffuse_texname.begin(),
                          materials[i].diffuse_texname.end(), '\\', '/');
-            printf("materials[%zu].diffuse_texname = %s\n", i,
-                   materials[i].diffuse_texname.c_str());
-            DiffuseTexture tex;
-            bool status =
-                load_tga(&tex, "crytek-sponza/" + materials[i].diffuse_texname);
-            if (!status) {
-                ERROR("Failed to load texture");
-                exit(EXIT_FAILURE);
+
+            std::string path = "crytek-sponza/" + materials[i].diffuse_texname;
+            printf("materials[%zu].diffuse_texname = %s\n", i, path.c_str());
+
+            GLuint tex_id = SOIL_load_OGL_texture(
+                path.c_str(), 0, 0,
+                SOIL_FLAG_MIPMAPS | SOIL_FLAG_TEXTURE_REPEATS |
+                    SOIL_FLAG_INVERT_Y);
+
+            if (tex_id == 0) {
+                ERROR("Failed to load diffuse texture from %s", path.c_str());
             }
 
-            GLuint tex_id;
-            glGenTextures(1, &tex_id);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, tex_id);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex.width, tex.height, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, tex.data);
-            glGenerateMipmap(GL_TEXTURE_2D);
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, aniso);
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
-                            GL_LINEAR_MIPMAP_LINEAR);
-            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
             texture_ids.push_back(tex_id);
-            INFO("texture %u: %s", tex_id,
-                 materials[i].diffuse_texname.c_str());
-            delete[] tex.data;
         } else {
             printf("materials[%zu].diffuse_texname: no texture\n", i);
             texture_ids.push_back(0);
@@ -365,8 +263,6 @@ int main(int argc, char *argv[]) {
      */
     std::vector<DrawObject> draw_objects;
     for (size_t s = 0; s < shapes.size(); s++) {
-        // INFO("Loading shape %s", shapes[s].name.c_str());
-
         /*
          * Shapes can have multiple materials, so generate one DrawObject and
          * vertex buffer per material in each object
