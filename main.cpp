@@ -200,17 +200,21 @@ void main() {
 
         // scale-bias back from [-1, 1] to [0, 1]
         vec2 sample_texcoord = ndc_sample.xy * 0.5 + 0.5;
-        float ndc_depth = texture(ssao_depth_tex, sample_texcoord).r * 2.0 - 1.0;
-        float z_delta = abs(ndc_sample.z - ndc_depth);
+        float ndc_depth = texture(ssao_depth_tex, sample_texcoord).r;
 
-        if (z_delta >= 0.0001f && z_delta < 0.05f) {
+        if (abs(view_position.z - ndc_depth) < 1.0f && ndc_depth < view_sample.z) {
             occlusion += 1.0f;
         }
     }
 
-    occlusion /= float(KERNEL_SIZE) - 1.0;
+    occlusion /= float(KERNEL_SIZE);
     occlusion = 1.0f - occlusion;
     color = vec4(occlusion, occlusion, occlusion, 1.0f);
+
+    // view-space surface normals
+    // color = vec4(view_normal.xyz * 0.5 + 0.5, 1.0f);
+
+    // combined SSAO + model textures
     // color = texture(ssao_tex, f_texcoord) * vec4(occlusion, occlusion, occlusion, 1.0f);
 }
 )glsl";
