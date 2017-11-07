@@ -91,7 +91,7 @@ typedef struct Texture {
     GLuint spec;
 } Texture;
 
-const char *const vert_src = R"glsl(
+const char *const model_vert_src = R"glsl(
 #version 330
 
 layout (location = 0) in vec3 v_position;
@@ -101,18 +101,20 @@ layout (location = 2) in vec2 v_texcoord;
 out vec3 f_normal;
 out vec2 f_texcoord;
 
-uniform mat4 world;
-uniform mat4 persp;
+uniform mat4 world_matrix;
+uniform mat4 projection_matrix;
+uniform mat3 normal_matrix;
 
 void main() {
+    f_normal = normal_matrix * v_normal;
     f_texcoord = v_texcoord;
     vec4 model_pos = vec4(v_position, 1.0f);
-    vec4 world_pos = world * model_pos;
-    gl_Position = persp * world_pos;
+    vec4 world_pos = world_matrix * model_pos;
+    gl_Position = projection_matrix * world_pos;
 };
 )glsl";
 
-const char *const frag_src = R"glsl(
+const char *const model_frag_src = R"glsl(
 #version 330
 
 in vec3 f_normal;
@@ -127,6 +129,8 @@ uniform sampler2D diff_tex;
 uniform sampler2D mask_tex;
 
 void main() {
+    out_normal = vec4(normalize(f_normal * 0.5 + 0.5), 1.0f);
+
     if (mask && texture(mask_tex, f_texcoord).r < 0.5) {
         discard;
     } else if (diff) {
@@ -134,12 +138,10 @@ void main() {
     } else {
         out_color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
     }
-
-    out_normal = vec4(f_normal, 1.0f);
 };
 )glsl";
 
-const char *const fullscreen_vert_src = R"glsl(
+const char *const ssao_vert_src = R"glsl(
 #version 330
 
 layout (location = 0) in vec2 v_position;
@@ -149,21 +151,73 @@ out vec2 f_texcoord;
 
 void main() {
     f_texcoord = v_texcoord;
-    gl_Position = vec4(v_position.xy, 0.0f, 1.0f);
+    gl_Position = vec4(v_position.xy, 1.0f, 1.0f);
 }
 )glsl";
 
-const char *const fullscreen_frag_src = R"glsl(
+const char *const ssao_frag_src = R"glsl(
 #version 330
+
+#define KERNEL_SIZE 32
+#define Z_DELTA_MIN 0.0001f
+#define Z_DELTA_MAX 0.005f
 
 in vec2 f_texcoord;
 
 out vec4 color;
 
-uniform sampler2D tex;
+uniform sampler2D ssao_tex;
+uniform sampler2D ssao_normal_tex;
+uniform sampler2D ssao_depth_tex;
+uniform vec3[KERNEL_SIZE] ssao_kernel;
+uniform sampler2D ssao_noise_tex;
+uniform vec2 ssao_noise_scale;
+uniform mat4 ssao_projection_matrix;
+uniform mat4 ssao_inverse_projection_matrix;
+
+vec4 get_view_position(vec2 texcoord) {
+    // scale-bias texcoords from [0, 1] to [-1, 1] to retrieve NDC x and y
+    float x = texcoord.s * 2.0f - 1.0f;
+    float y = texcoord.t * 2.0f - 1.0f;
+
+    // pull NDC z out of the depth buffer
+    float z = texture(ssao_depth_tex, texcoord).r * 2.0f - 1.0f;
+
+    vec4 ndc_position = vec4(x, y, z, 1.0f);
+
+    // calculate this fragment's position in view space
+    vec4 view_position = ssao_inverse_projection_matrix * ndc_position;
+    return view_position / view_position.w;
+}
 
 void main() {
-    color = texture(tex, f_texcoord);
+    vec4 view_position = get_view_position(f_texcoord);
+    vec3 view_normal = normalize(texture(ssao_normal_tex, f_texcoord).xyz * 2.0 - 1.0);
+    vec3 rotation = normalize(texture(ssao_noise_tex, f_texcoord * ssao_noise_scale).xyz * 2.0 - 1.0);
+    vec3 view_tangent = normalize(rotation - view_normal * dot(rotation, view_normal));
+    vec3 view_bitangent = cross(view_normal, view_tangent);
+    mat3 kernel_matrix = mat3(view_tangent, view_bitangent, view_normal);
+    float occlusion = 0.0f;
+
+    for (int i = 0; i < KERNEL_SIZE; i++) {
+        vec4 view_sample = view_position + 1.0f * vec4(kernel_matrix * ssao_kernel[i], 1.0f);
+        vec4 ndc_sample = ssao_projection_matrix * view_sample;
+        ndc_sample.xy /= ndc_sample.w;
+
+        // scale-bias back from [-1, 1] to [0, 1]
+        vec2 sample_texcoord = ndc_sample.xy * 0.5 + 0.5;
+        float ndc_depth = texture(ssao_depth_tex, sample_texcoord).r * 2.0 - 1.0;
+        float z_delta = abs(ndc_sample.z - ndc_depth);
+
+        if (z_delta >= 0.0001f && z_delta < 0.05f) {
+            occlusion += 1.0f;
+        }
+    }
+
+    occlusion /= float(KERNEL_SIZE) - 1.0;
+    occlusion = 1.0f - occlusion;
+    color = vec4(occlusion, occlusion, occlusion, 1.0f);
+    // color = texture(ssao_tex, f_texcoord) * vec4(occlusion, occlusion, occlusion, 1.0f);
 }
 )glsl";
 
@@ -376,7 +430,7 @@ bool create_draw_objects(std::vector<DrawObject> &draw_objects,
                 for (size_t normal_id = 0; normal_id < 3; normal_id++) {
                     for (size_t component = 0; component < 3; component++) {
                         verts[normal_id].normal[component] =
-                            attrib.vertices[3 * idx[normal_id].vertex_index +
+                            attrib.normals[3 * idx[normal_id].normal_index +
                                             component];
                     }
                 }
@@ -531,27 +585,112 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    GLuint vert = new_shader(GL_VERTEX_SHADER, vert_src);
-    GLuint frag = new_shader(GL_FRAGMENT_SHADER, frag_src);
+    std::mt19937 gen;
+    std::uniform_real_distribution<GLfloat> zero_one_dist(0.0f, 1.0f);
+    std::uniform_real_distribution<GLfloat> minus_one_one_dist(-1.0f, 1.0f);
+
+    /*
+     * SSAO sample kernel generation
+     */
+    GLfloat ssao_kernel[3 * KERNEL_SIZE];
+    for (size_t i = 0; i < KERNEL_SIZE; i++) {
+        /*
+         * Generate points at random across the surface of a hemisphere on the
+         * z-axis with radius r = 1. Initially generate x and y on the range
+         * [-1, 1] and z on the range [0, 1], then normalize the vector
+         */
+        float x = minus_one_one_dist(gen);
+        float y = minus_one_one_dist(gen);
+        float z = zero_one_dist(gen);
+        float mag = sqrtf(x * x + y * y + z * z);
+
+        ssao_kernel[3 * i] = x / mag;
+        ssao_kernel[3 * i + 1] = y / mag;
+        ssao_kernel[3 * i + 2] = z / mag;
+
+        /*
+         * Scatter the points inside the hemisphere using an attenuation
+         * function to place more samples closer to the origin
+         */
+        float scale = (float)i / (float)KERNEL_SIZE;
+        scale = LERP(0.1f, 1.0f, scale);
+        for (size_t c = 0; c < 3; c++) {
+            ssao_kernel[3 * i + c] *= scale;
+        }
+    }
+
+    /*
+     * Random noise generation for kernel rotation
+     */
+    GLfloat ssao_noise[3 * NOISE_SIZE];
+    for (size_t i = 0; i < NOISE_SIZE; i++) {
+        /*
+         * Generate a small noise texture used for randomly rotating the sample
+         * points about the z-axis
+         */
+        float x = minus_one_one_dist(gen);
+        float y = minus_one_one_dist(gen);
+        float z = 0.0;
+        float mag = sqrtf(x * x + y * y + z * z);
+
+        ssao_noise[3 * i] = x / mag;
+        ssao_noise[3 * i + 1] = y / mag;
+        ssao_noise[3 * i + 2] = z / mag;
+    }
+
+    GLuint ssao_noise_tex;
+    glGenTextures(1, &ssao_noise_tex);
+    glBindTexture(GL_TEXTURE_2D, ssao_noise_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, NOISE_SIZE_1D, NOISE_SIZE_1D, 0, GL_RGB, GL_FLOAT, ssao_noise);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    GLfloat ssao_noise_scale[2] = { 1920.0f / (GLfloat)NOISE_SIZE_1D,
+                                    1080.0f / (GLfloat)NOISE_SIZE_1D };
+
+    GLuint vert = new_shader(GL_VERTEX_SHADER, model_vert_src);
+    GLuint frag = new_shader(GL_FRAGMENT_SHADER, model_frag_src);
     GLuint shaders[2] = {vert, frag};
-    GLuint prog = new_program(2, shaders);
-    GLuint fullscreen_vert = new_shader(GL_VERTEX_SHADER, fullscreen_vert_src);
-    GLuint fullscreen_frag =
-        new_shader(GL_FRAGMENT_SHADER, fullscreen_frag_src);
-    GLuint fullscreen_shaders[2] = {fullscreen_vert, fullscreen_frag};
-    GLuint fullscreen_prog = new_program(2, fullscreen_shaders);
+    GLuint model_prog = new_program(2, shaders);
+    GLuint ssao_vert = new_shader(GL_VERTEX_SHADER, ssao_vert_src);
+    GLuint ssao_frag =
+        new_shader(GL_FRAGMENT_SHADER, ssao_frag_src);
+    GLuint ssao_shaders[2] = {ssao_vert, ssao_frag};
+    GLuint ssao_prog = new_program(2, ssao_shaders);
     ERROR_OPENGL("Shader compilation and linking failed.");
 
-    glUseProgram(prog);
-    GLuint world_unif = glGetUniformLocation(prog, "world");
-    GLuint persp_unif = glGetUniformLocation(prog, "persp");
-    GLuint diff_unif = glGetUniformLocation(prog, "diff");
-    GLuint mask_unif = glGetUniformLocation(prog, "mask");
-    GLuint diff_tex_unif = glGetUniformLocation(prog, "diff_tex");
-    GLuint mask_tex_unif = glGetUniformLocation(prog, "mask_tex");
+    GLuint world_matrix_unif = glGetUniformLocation(model_prog, "world_matrix");
+    GLuint projection_matrix_unif =
+        glGetUniformLocation(model_prog, "projection_matrix");
+    GLuint normal_matrix_unif = glGetUniformLocation(model_prog, "normal_matrix");
+    GLuint diff_unif = glGetUniformLocation(model_prog, "diff");
+    GLuint mask_unif = glGetUniformLocation(model_prog, "mask");
+    GLuint diff_tex_unif = glGetUniformLocation(model_prog, "diff_tex");
+    GLuint mask_tex_unif = glGetUniformLocation(model_prog, "mask_tex");
 
+    glUseProgram(model_prog);
     glUniform1i(diff_tex_unif, 0);
     glUniform1i(mask_tex_unif, 1);
+
+    GLuint ssao_tex_unif = glGetUniformLocation(ssao_prog, "ssao_tex");
+    GLuint ssao_normal_tex_unif = glGetUniformLocation(ssao_prog, "ssao_normal_tex");
+    GLuint ssao_depth_tex_unif = glGetUniformLocation(ssao_prog, "ssao_depth_tex");
+    GLuint ssao_noise_tex_unif = glGetUniformLocation(ssao_prog, "ssao_noise_tex");
+    GLuint ssao_kernel_unif = glGetUniformLocation(ssao_prog, "ssao_kernel");
+    GLuint ssao_noise_scale_unif = glGetUniformLocation(ssao_prog, "ssao_noise_scale");
+    GLuint ssao_projection_matrix_unif = glGetUniformLocation(ssao_prog, "ssao_projection_matrix");
+    GLuint ssao_inverse_projection_matrix_unif = glGetUniformLocation(ssao_prog, "ssao_inverse_projection_matrix");
+
+    glUseProgram(ssao_prog);
+    glUniform1i(ssao_tex_unif, 0);
+    glUniform1i(ssao_normal_tex_unif, 1);
+    glUniform1i(ssao_depth_tex_unif, 2);
+    glUniform1i(ssao_noise_tex_unif, 3);
+    glUniform3fv(ssao_kernel_unif, KERNEL_SIZE, ssao_kernel);
+    glUniform2fv(ssao_noise_scale_unif, 1, ssao_noise_scale);
 
     GLuint geometry_vao;
     glGenVertexArrays(1, &geometry_vao);
@@ -635,53 +774,6 @@ int main(int argc, char *argv[]) {
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    std::mt19937 gen;
-    std::uniform_real_distribution<GLfloat> zero_one_dist(0.0f, 1.0f);
-    std::uniform_real_distribution<GLfloat> minus_one_one_dist(-1.0f, 1.0f);
-
-    GLfloat kernel[3 * KERNEL_SIZE];
-    for (size_t i = 0; i < KERNEL_SIZE; i++) {
-        /*
-         * Generate points at random across the surface of a hemisphere on the
-         * z-axis with radius r = 1. Initially generate x and y on the range
-         * [-1, 1] and z on the range [0, 1], then normalize the vector
-         */
-        float x = minus_one_one_dist(gen);
-        float y = minus_one_one_dist(gen);
-        float z = zero_one_dist(gen);
-        float mag = sqrtf(x * x + y * y + z * z);
-
-        kernel[3 * i] = x / mag;
-        kernel[3 * i + 1] = y / mag;
-        kernel[3 * i + 2] = z / mag;
-
-        /*
-         * Scatter the points inside the hemisphere using an attenuation
-         * function to place more samples closer to the origin
-         */
-        float scale = (float)i / (float)KERNEL_SIZE;
-        scale = LERP(0.1f, 1.0f, scale);
-        for (size_t c = 0; c < 3; c++) {
-            kernel[3 * i + c] *= scale;
-        }
-    }
-
-    GLfloat noise[3 * NOISE_SIZE];
-    for (size_t i = 0; i < NOISE_SIZE; i++) {
-        /*
-         * Generate a small noise texture used for randomly rotating the sample
-         * points about the z-axis
-         */
-        float x = minus_one_one_dist(gen);
-        float y = minus_one_one_dist(gen);
-        float z = 0.0;
-        float mag = sqrtf(x * x + y * y + z * z);
-
-        noise[3 * i] = x / mag;
-        noise[3 * i + 1] = y / mag;
-        noise[3 * i + 2] = z / mag;
-    }
-
     float pos[3] = {0.0f};
     float angle[3] = {0.0f};
 
@@ -728,11 +820,6 @@ int main(int argc, char *argv[]) {
         }
 
         /*
-         *
-         */
-        glUseProgram(prog);
-
-        /*
          * Calculate world transform matrix based on current position and angle
          */
         glm::mat4 world;
@@ -740,7 +827,6 @@ int main(int argc, char *argv[]) {
         world = glm::rotate(world, angle[0], glm::vec3(1.0f, 0.0, 0.0f));
         world = glm::rotate(world, angle[1], glm::vec3(0.0f, 1.0, 0.0f));
         world = glm::translate(world, glm::vec3(pos[0], pos[1], pos[2]));
-        glUniformMatrix4fv(world_unif, 1, GL_FALSE, &world[0][0]);
 
         /*
          * Calculate perspective matrix based on current aspect ratio
@@ -752,8 +838,20 @@ int main(int argc, char *argv[]) {
         float aspect = (float)framebuffer_width / (float)framebuffer_height;
         float z_near = 1.0f;
         float z_far = 1024.0f;
-        glm::mat4 perspective = glm::perspective(fovy, aspect, z_near, z_far);
-        glUniformMatrix4fv(persp_unif, 1, GL_FALSE, &perspective[0][0]);
+        glm::mat4 projection_matrix =
+            glm::perspective(fovy, aspect, z_near, z_far);
+        glm::mat4 inverse_projection_matrix = glm::inverse(projection_matrix);
+        glm::mat4 inverse_transpose_world = glm::transpose(glm::inverse(world));
+        glm::mat3 normal_matrix =
+            glm::mat3(glm::vec3(inverse_transpose_world[0][0],
+                                inverse_transpose_world[0][1],
+                                inverse_transpose_world[0][2]),
+                      glm::vec3(inverse_transpose_world[1][0],
+                                inverse_transpose_world[1][1],
+                                inverse_transpose_world[1][2]),
+                      glm::vec3(inverse_transpose_world[2][0],
+                                inverse_transpose_world[2][1],
+                                inverse_transpose_world[2][2]));
 
         /*
          * Initial rendering pass:
@@ -761,6 +859,14 @@ int main(int argc, char *argv[]) {
          * - surface normals
          * - depth buffer
          */
+        glUseProgram(model_prog);
+        glUniformMatrix4fv(world_matrix_unif, 1, GL_FALSE, &world[0][0]);
+        glUniformMatrix4fv(projection_matrix_unif, 1, GL_FALSE,
+                           &projection_matrix[0][0]);
+        glUniformMatrix3fv(normal_matrix_unif, 1, GL_FALSE,
+                           &normal_matrix[0][0]);
+
+
         GLenum draw_buffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 
         glBindFramebuffer(GL_FRAMEBUFFER, ssao_fbo);
@@ -811,18 +917,28 @@ int main(int argc, char *argv[]) {
         glDisableVertexAttribArray(2);
 
         /*
-         * Final pass: render texture to screen
+         * SSAO pass
          */
+        glUseProgram(ssao_prog);
+        glUniformMatrix4fv(ssao_projection_matrix_unif, 1, GL_FALSE, &projection_matrix[0][0]);
+        glUniformMatrix4fv(ssao_inverse_projection_matrix_unif, 1, GL_FALSE, &inverse_projection_matrix[0][0]);
+
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         ERROR_OPENGL("error binding default framebuffer");
-        glUseProgram(fullscreen_prog);
 
         glBindVertexArray(fullscreen_vao);
         glEnableVertexAttribArray(0);
         glEnableVertexAttribArray(1);
         glBindBuffer(GL_ARRAY_BUFFER, fullscreen_vbo);
+
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, ssao_tex);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, ssao_normal_tex);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, ssao_depth_tex);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, ssao_noise_tex);
 
         glDrawArrays(GL_TRIANGLES, 0, 6);
         glDisableVertexAttribArray(0);
