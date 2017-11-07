@@ -78,12 +78,6 @@ typedef struct DrawObject {
     size_t material_id;
 } DrawObject;
 
-typedef struct DiffuseTexture {
-    GLuint width;
-    GLuint height;
-    GLubyte *data;
-} DiffuseTexture;
-
 typedef struct Texture {
     GLuint diff;
     GLuint mask;
