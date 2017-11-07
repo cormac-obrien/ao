@@ -1,8 +1,8 @@
 CC=clang
 CXX=clang
 
-CFLAGS=-g -std=c11 -Wall -Wextra
-CXXFLAGS=-g -std=c++11 -Wall -Wextra
+CFLAGS=-Iinclude -g -std=c11 -Wall -Wextra
+CXXFLAGS=-Iinclude -g -std=c++11 -Wall -Wextra
 LDFLAGS=-lGL -lglfw -lm -ldl -lstdc++ -lSOIL
 
 %.o: %.c
