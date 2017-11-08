@@ -175,7 +175,7 @@ vec4 get_view_position(vec2 texcoord) {
     float y = texcoord.t * 2.0f - 1.0f;
 
     // pull NDC z out of the depth buffer
-    float z = texture(ssao_depth_tex, texcoord).r * 2.0f - 1.0f;
+    float z = texture(ssao_depth_tex, texcoord).r;
 
     vec4 ndc_position = vec4(x, y, z, 1.0f);
 
