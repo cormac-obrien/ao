@@ -202,20 +202,41 @@ void main() {
         vec2 sample_texcoord = ndc_sample.xy * 0.5 + 0.5;
         float ndc_depth = texture(ssao_depth_tex, sample_texcoord).r;
 
-        if (abs(view_position.z - ndc_depth) < 1.0f && ndc_depth < view_sample.z) {
+        float delta_z = texture(ssao_depth_tex, f_texcoord).r - ndc_depth;
+        if (delta_z > 0.0001f && delta_z < 0.005f) {
             occlusion += 1.0f;
         }
     }
 
-    occlusion /= float(KERNEL_SIZE);
+    occlusion /= float(KERNEL_SIZE) - 1.0f;
     occlusion = 1.0f - occlusion;
-    color = vec4(occlusion, occlusion, occlusion, 1.0f);
+    color = vec4(occlusion, occlusion, occlusion, 1.0f); // occlusion only
+    // color = texture(ssao_tex, f_texcoord) * vec4(occlusion, occlusion, occlusion, 1.0f); // occlusion + color
+}
+)glsl";
 
-    // view-space surface normals
-    // color = vec4(view_normal.xyz * 0.5 + 0.5, 1.0f);
+const char * const blur_vert_src = R"glsl(
+#version 330
 
-    // combined SSAO + model textures
-    // color = texture(ssao_tex, f_texcoord) * vec4(occlusion, occlusion, occlusion, 1.0f);
+layout (position = 0) in vec2 v_position;
+layout (position = 1) in vec2 v_texcoord;
+
+out vec2 f_texcoord;
+
+void main() {
+    f_texcoord = v_texcoord;
+    gl_Position = vec4(v_position.xy, 1.0f, 1.0f);
+}
+)glsl";
+
+const char * const blur_frag_src = R"glsl(
+#version 330
+
+in vec2 f_texcoord;
+
+void main() {
+    f_texcoord = v_texcoord;
+    gl_Position = vec4(v_position.xy, 1.0f, 1.0f);
 }
 )glsl";
 
