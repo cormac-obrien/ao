@@ -218,8 +218,8 @@ void main() {
 const char * const blur_vert_src = R"glsl(
 #version 330
 
-layout (position = 0) in vec2 v_position;
-layout (position = 1) in vec2 v_texcoord;
+layout (location = 0) in vec2 v_position;
+layout (location = 1) in vec2 v_texcoord;
 
 out vec2 f_texcoord;
 
@@ -232,14 +232,29 @@ void main() {
 const char * const blur_frag_src = R"glsl(
 #version 330
 
-in vec2 f_texcoord;
+#define BLUR_SIZE_1D 4
+
+noperspective in vec2 f_texcoord;
 
 out vec4 out_color;
 
 uniform sampler2D blur_tex;
+uniform sampler2D blur_ssao_tex;
 
 void main() {
-    out_color = texture(blur_tex, f_texcoord);
+    vec2 texel_size = 1.0f / vec2(textureSize(blur_tex, 0));
+    float result = 0.0f;
+    vec2 hlim = vec2(float(-BLUR_SIZE_1D) * 0.5 + 0.5);
+
+    for (int x = 0; x < BLUR_SIZE_1D; x++) {
+        for (int y = 0; y < BLUR_SIZE_1D; y++) {
+            vec2 offset = (hlim + vec2(float(x), float(y))) * texel_size;
+            result += texture(blur_ssao_tex, f_texcoord + offset).r;
+        }
+    }
+
+    float value = result / float(BLUR_SIZE_1D * BLUR_SIZE_1D);
+    out_color = vec4(texture(blur_tex, f_texcoord).rgb * value, 1.0f);
 }
 )glsl";
 
@@ -295,8 +310,6 @@ GLuint new_program(size_t shader_count, const GLuint *shaders) {
 
     glLinkProgram(program);
 
-    INFO("Linked shaders.");
-
     GLint prog_stat;
     glGetProgramiv(program, GL_LINK_STATUS, &prog_stat);
     if (prog_stat == GL_FALSE) {
@@ -307,6 +320,7 @@ GLuint new_program(size_t shader_count, const GLuint *shaders) {
         glGetProgramInfoLog(program, loglen, NULL, log);
         fprintf(stderr, "Failed to link program:\n%s\n", log);
         free(log);
+        program = 0;
     }
 
     return program;
@@ -677,11 +691,16 @@ int main(int argc, char *argv[]) {
     GLuint frag = new_shader(GL_FRAGMENT_SHADER, model_frag_src);
     GLuint shaders[2] = {vert, frag};
     GLuint model_prog = new_program(2, shaders);
+
     GLuint ssao_vert = new_shader(GL_VERTEX_SHADER, ssao_vert_src);
-    GLuint ssao_frag =
-        new_shader(GL_FRAGMENT_SHADER, ssao_frag_src);
+    GLuint ssao_frag = new_shader(GL_FRAGMENT_SHADER, ssao_frag_src);
     GLuint ssao_shaders[2] = {ssao_vert, ssao_frag};
     GLuint ssao_prog = new_program(2, ssao_shaders);
+
+    GLuint blur_vert = new_shader(GL_VERTEX_SHADER, blur_vert_src);
+    GLuint blur_frag = new_shader(GL_FRAGMENT_SHADER, blur_frag_src);
+    GLuint blur_shaders[2] = {blur_vert, blur_frag};
+    GLuint blur_prog = new_program(2, blur_shaders);
     ERROR_OPENGL("Shader compilation and linking failed.");
 
     GLuint world_matrix_unif = glGetUniformLocation(model_prog, "world_matrix");
@@ -713,6 +732,13 @@ int main(int argc, char *argv[]) {
     glUniform1i(ssao_noise_tex_unif, 3);
     glUniform3fv(ssao_kernel_unif, KERNEL_SIZE, ssao_kernel);
     glUniform2fv(ssao_noise_scale_unif, 1, ssao_noise_scale);
+
+    GLuint blur_tex_unif = glGetUniformLocation(blur_prog, "blur_tex");
+    GLuint blur_ssao_tex_unif = glGetUniformLocation(blur_prog, "blur_tex");
+
+    glUseProgram(blur_prog);
+    glUniform1i(blur_tex_unif, 0);
+    glUniform1i(blur_ssao_tex_unif, 1);
 
     GLuint geometry_vao;
     glGenVertexArrays(1, &geometry_vao);
@@ -793,6 +819,28 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    GLuint blur_tex;
+    glGenTextures(1, &blur_tex);
+    glBindTexture(GL_TEXTURE_2D, blur_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1920, 1080, 0, GL_RGB,
+                 GL_UNSIGNED_BYTE, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    ERROR_OPENGL("Error generating blur texture");
+
+    GLuint blur_fbo;
+    glGenFramebuffers(1, &blur_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, blur_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           blur_tex, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        ERROR_OPENGL("Blur framebuffer object not complete");
+        exit(EXIT_FAILURE);
+    }
 
     float pos[3] = {0.0f};
     float angle[3] = {0.0f};
@@ -943,8 +991,8 @@ int main(int argc, char *argv[]) {
         glUniformMatrix4fv(ssao_projection_matrix_unif, 1, GL_FALSE, &projection_matrix[0][0]);
         glUniformMatrix4fv(ssao_inverse_projection_matrix_unif, 1, GL_FALSE, &inverse_projection_matrix[0][0]);
 
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        ERROR_OPENGL("error binding default framebuffer");
+        glBindFramebuffer(GL_FRAMEBUFFER, blur_fbo);
+        ERROR_OPENGL("error binding SSAO framebuffer");
 
         glBindVertexArray(fullscreen_vao);
         glEnableVertexAttribArray(0);
@@ -959,6 +1007,23 @@ int main(int argc, char *argv[]) {
         glBindTexture(GL_TEXTURE_2D, ssao_depth_tex);
         glActiveTexture(GL_TEXTURE3);
         glBindTexture(GL_TEXTURE_2D, ssao_noise_tex);
+
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glDisableVertexAttribArray(0);
+        glDisableVertexAttribArray(1);
+
+        glUseProgram(blur_prog);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        glBindVertexArray(fullscreen_vao);
+        glEnableVertexAttribArray(0);
+        glEnableVertexAttribArray(1);
+        glBindBuffer(GL_ARRAY_BUFFER, fullscreen_vbo);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, blur_tex);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, ssao_tex);
 
         glDrawArrays(GL_TRIANGLES, 0, 6);
         glDisableVertexAttribArray(0);
