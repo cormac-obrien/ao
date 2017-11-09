@@ -525,32 +525,18 @@ int main(int argc, char *argv[]) {
     GLfloat ssao_noise_scale[2] = { 1920.0f / (GLfloat)NOISE_SIZE_1D,
                                     1080.0f / (GLfloat)NOISE_SIZE_1D };
 
-    GLuint vert = load_shader(GL_VERTEX_SHADER, "model.vert.glsl");
-    if (vert == 0) {
-        ERROR("Failed to compile model.vert.glsl");
-        exit(EXIT_FAILURE);
-    }
+    GLuint model_vert = load_shader(GL_VERTEX_SHADER, "model-vert.glsl");
+    GLuint model_frag = load_shader(GL_FRAGMENT_SHADER, "model-frag.glsl");
+    GLuint model_shaders[2] = {model_vert, model_frag};
+    GLuint model_prog = new_program(2, model_shaders);
 
-    GLuint frag = load_shader(GL_FRAGMENT_SHADER, "model.frag.glsl");
-    if (frag == 0) {
-        ERROR("Failed to compile model.frag.glsl");
-        exit(EXIT_FAILURE);
-    }
-
-    GLuint shaders[2] = {vert, frag};
-    GLuint model_prog = new_program(2, shaders);
-    if (model_prog == 0) {
-        ERROR("Failed to link model shader program");
-        exit(EXIT_FAILURE);
-    }
-
-    GLuint ssao_vert = load_shader(GL_VERTEX_SHADER, "ssao.vert.glsl");
-    GLuint ssao_frag = load_shader(GL_FRAGMENT_SHADER, "ssao.frag.glsl");
+    GLuint ssao_vert = load_shader(GL_VERTEX_SHADER, "ssao-vert.glsl");
+    GLuint ssao_frag = load_shader(GL_FRAGMENT_SHADER, "ssao-frag.glsl");
     GLuint ssao_shaders[2] = {ssao_vert, ssao_frag};
     GLuint ssao_prog = new_program(2, ssao_shaders);
 
-    GLuint blur_vert = load_shader(GL_VERTEX_SHADER, "blur.vert.glsl");
-    GLuint blur_frag = load_shader(GL_FRAGMENT_SHADER, "blur.frag.glsl");
+    GLuint blur_vert = load_shader(GL_VERTEX_SHADER, "blur-vert.glsl");
+    GLuint blur_frag = load_shader(GL_FRAGMENT_SHADER, "blur-frag.glsl");
     GLuint blur_shaders[2] = {blur_vert, blur_frag};
     GLuint blur_prog = new_program(2, blur_shaders);
     ERROR_OPENGL("Shader compilation and linking failed.");
@@ -743,7 +729,6 @@ int main(int argc, char *argv[]) {
          * Calculate world transform matrix based on current position and angle
          */
         glm::mat4 world;
-        world = glm::scale(world, glm::vec3(0.1, 0.1, 0.1));
         world = glm::rotate(world, angle[0], glm::vec3(1.0f, 0.0, 0.0f));
         world = glm::rotate(world, angle[1], glm::vec3(0.0f, 1.0, 0.0f));
         world = glm::translate(world, glm::vec3(pos[0], pos[1], pos[2]));
@@ -757,7 +742,7 @@ int main(int argc, char *argv[]) {
         float fovy = 0.5f * (float)M_PI;
         float aspect = (float)framebuffer_width / (float)framebuffer_height;
         float z_near = 1.0f;
-        float z_far = 1024.0f;
+        float z_far = 4096.0f;
         glm::mat4 projection_matrix =
             glm::perspective(fovy, aspect, z_near, z_far);
         glm::mat4 inverse_projection_matrix = glm::inverse(projection_matrix);

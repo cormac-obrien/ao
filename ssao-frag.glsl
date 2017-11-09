@@ -3,6 +3,7 @@
 #define KERNEL_SIZE 32
 #define Z_DELTA_MIN 0.0001f
 #define Z_DELTA_MAX 0.005f
+#define SAMPLE_RADIUS 50.0f
 
 in vec2 f_texcoord;
 
@@ -42,7 +43,7 @@ void main() {
     float occlusion = 0.0f;
 
     for (int i = 0; i < KERNEL_SIZE; i++) {
-        vec3 view_sample = view_position + 1.0f * (kernel_matrix * ssao_kernel[i]);
+        vec3 view_sample = view_position + SAMPLE_RADIUS * (kernel_matrix * ssao_kernel[i]);
         vec4 ndc_sample = ssao_projection_matrix * vec4(view_sample, 1.0f);
         ndc_sample.xy /= ndc_sample.w;
 
@@ -50,8 +51,8 @@ void main() {
         vec2 sample_texcoord = ndc_sample.xy * 0.5 + 0.5;
         float ndc_depth = texture(ssao_depth_tex, sample_texcoord).r;
 
-        float delta_z = ndc_sample.z / ndc_sample.w - ndc_depth;
-        if (delta_z > 0.0001f && delta_z < 0.005f) {
+        float delta_z = (ndc_sample.z / ndc_sample.w - ndc_depth) / ndc_depth;
+        if (delta_z > 0.00001f && delta_z < 0.00025f) {
             occlusion += 1.0f;
         }
     }
