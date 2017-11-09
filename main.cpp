@@ -234,9 +234,12 @@ const char * const blur_frag_src = R"glsl(
 
 in vec2 f_texcoord;
 
+out vec4 out_color;
+
+uniform sampler2D blur_tex;
+
 void main() {
-    f_texcoord = v_texcoord;
-    gl_Position = vec4(v_position.xy, 1.0f, 1.0f);
+    out_color = texture(blur_tex, f_texcoord);
 }
 )glsl";
 
@@ -738,9 +741,9 @@ int main(int argc, char *argv[]) {
      * Set up for SSAO rendering pass. We generate three images: one with
      * diffuse textures, one with surface normals and one with depth values.
      */
+    glActiveTexture(GL_TEXTURE0);
 
     GLuint ssao_tex;
-    glActiveTexture(GL_TEXTURE0);
     glGenTextures(1, &ssao_tex);
     glBindTexture(GL_TEXTURE_2D, ssao_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1920, 1080, 0, GL_RGB,
@@ -753,7 +756,6 @@ int main(int argc, char *argv[]) {
     ERROR_OPENGL("Error generating SSAO texture");
 
     GLuint ssao_normal_tex;
-    glActiveTexture(GL_TEXTURE1);
     glGenTextures(1, &ssao_normal_tex);
     glBindTexture(GL_TEXTURE_2D, ssao_normal_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1920, 1080, 0, GL_RGB,
@@ -766,7 +768,6 @@ int main(int argc, char *argv[]) {
     ERROR_OPENGL("Error generating SSAO normal texture");
 
     GLuint ssao_depth_tex;
-    glActiveTexture(GL_TEXTURE2);
     glGenTextures(1, &ssao_depth_tex);
     glBindTexture(GL_TEXTURE_2D, ssao_depth_tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, 1920, 1080, 0,
