@@ -85,179 +85,6 @@ typedef struct Texture {
     GLuint spec;
 } Texture;
 
-const char *const model_vert_src = R"glsl(
-#version 330
-
-layout (location = 0) in vec3 v_position;
-layout (location = 1) in vec3 v_normal;
-layout (location = 2) in vec2 v_texcoord;
-
-out vec3 f_normal;
-out vec2 f_texcoord;
-
-uniform mat4 world_matrix;
-uniform mat4 projection_matrix;
-uniform mat3 normal_matrix;
-
-void main() {
-    f_normal = normal_matrix * v_normal;
-    f_texcoord = v_texcoord;
-    vec4 model_pos = vec4(v_position, 1.0f);
-    vec4 world_pos = world_matrix * model_pos;
-    gl_Position = projection_matrix * world_pos;
-};
-)glsl";
-
-const char *const model_frag_src = R"glsl(
-#version 330
-
-in vec3 f_normal;
-in vec2 f_texcoord;
-
-layout (location = 0) out vec4 out_color;
-layout (location = 1) out vec4 out_normal;
-
-uniform bool diff;
-uniform bool mask;
-uniform sampler2D diff_tex;
-uniform sampler2D mask_tex;
-
-void main() {
-    out_normal = vec4(normalize(f_normal * 0.5 + 0.5), 1.0f);
-
-    if (mask && texture(mask_tex, f_texcoord).r < 0.5) {
-        discard;
-    } else if (diff) {
-        out_color = texture(diff_tex, f_texcoord);
-    } else {
-        out_color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-    }
-};
-)glsl";
-
-const char *const ssao_vert_src = R"glsl(
-#version 330
-
-layout (location = 0) in vec2 v_position;
-layout (location = 1) in vec2 v_texcoord;
-
-out vec2 f_texcoord;
-
-void main() {
-    f_texcoord = v_texcoord;
-    gl_Position = vec4(v_position.xy, 1.0f, 1.0f);
-}
-)glsl";
-
-const char *const ssao_frag_src = R"glsl(
-#version 330
-
-#define KERNEL_SIZE 32
-#define Z_DELTA_MIN 0.0001f
-#define Z_DELTA_MAX 0.005f
-
-in vec2 f_texcoord;
-
-out vec4 color;
-
-uniform sampler2D ssao_tex;
-uniform sampler2D ssao_normal_tex;
-uniform sampler2D ssao_depth_tex;
-uniform vec3[KERNEL_SIZE] ssao_kernel;
-uniform sampler2D ssao_noise_tex;
-uniform vec2 ssao_noise_scale;
-uniform mat4 ssao_projection_matrix;
-uniform mat4 ssao_inverse_projection_matrix;
-
-vec3 get_view_position(vec2 texcoord) {
-    // scale-bias texcoords from [0, 1] to [-1, 1] to retrieve NDC x and y
-    float x = texcoord.s * 2.0f - 1.0f;
-    float y = texcoord.t * 2.0f - 1.0f;
-
-    // pull NDC z out of the depth buffer
-    float z = texture(ssao_depth_tex, texcoord).r;
-
-    vec4 ndc_position = vec4(x, y, z, 1.0f);
-
-    // calculate this fragment's position in view space
-    vec4 view_position = ssao_inverse_projection_matrix * ndc_position;
-    return view_position.xyz / view_position.w;
-}
-
-void main() {
-    vec3 view_position = get_view_position(f_texcoord);
-    vec3 view_normal = normalize(texture(ssao_normal_tex, f_texcoord).xyz * 2.0 - 1.0);
-    vec3 rotation = normalize(texture(ssao_noise_tex, f_texcoord * ssao_noise_scale).xyz * 2.0 - 1.0);
-    vec3 view_tangent = normalize(rotation - view_normal * dot(rotation, view_normal));
-    vec3 view_bitangent = cross(view_normal, view_tangent);
-    mat3 kernel_matrix = mat3(view_tangent, view_bitangent, view_normal);
-    float occlusion = 0.0f;
-
-    for (int i = 0; i < KERNEL_SIZE; i++) {
-        vec3 view_sample = view_position + 1.0f * (kernel_matrix * ssao_kernel[i]);
-        vec4 ndc_sample = ssao_projection_matrix * vec4(view_sample, 1.0f);
-        ndc_sample.xy /= ndc_sample.w;
-
-        // scale-bias back from [-1, 1] to [0, 1]
-        vec2 sample_texcoord = ndc_sample.xy * 0.5 + 0.5;
-        float ndc_depth = texture(ssao_depth_tex, sample_texcoord).r;
-
-        float delta_z = ndc_sample.z / ndc_sample.w - ndc_depth;
-        if (delta_z > 0.0001f && delta_z < 0.005f) {
-            occlusion += 1.0f;
-        }
-    }
-
-    occlusion /= float(KERNEL_SIZE) - 1.0f;
-    occlusion = 1.0f - occlusion;
-    color = vec4(occlusion, occlusion, occlusion, 1.0f); // occlusion only
-    // color = texture(ssao_tex, f_texcoord) * vec4(occlusion, occlusion, occlusion, 1.0f); // occlusion + color
-}
-)glsl";
-
-const char * const blur_vert_src = R"glsl(
-#version 330
-
-layout (location = 0) in vec2 v_position;
-layout (location = 1) in vec2 v_texcoord;
-
-out vec2 f_texcoord;
-
-void main() {
-    f_texcoord = v_texcoord;
-    gl_Position = vec4(v_position.xy, 1.0f, 1.0f);
-}
-)glsl";
-
-const char * const blur_frag_src = R"glsl(
-#version 330
-
-#define BLUR_SIZE_1D 4
-
-noperspective in vec2 f_texcoord;
-
-out vec4 out_color;
-
-uniform sampler2D blur_tex;
-uniform sampler2D blur_ssao_tex;
-
-void main() {
-    vec2 texel_size = 1.0f / vec2(textureSize(blur_tex, 0));
-    float result = 0.0f;
-    vec2 hlim = vec2(float(-BLUR_SIZE_1D) * 0.5 + 0.5);
-
-    for (int x = 0; x < BLUR_SIZE_1D; x++) {
-        for (int y = 0; y < BLUR_SIZE_1D; y++) {
-            vec2 offset = (hlim + vec2(float(x), float(y))) * texel_size;
-            result += texture(blur_ssao_tex, f_texcoord + offset).r;
-        }
-    }
-
-    float value = result / float(BLUR_SIZE_1D * BLUR_SIZE_1D);
-    out_color = vec4(texture(blur_tex, f_texcoord).rgb * value, 1.0f);
-}
-)glsl";
-
 /*
  * Vertex data for rendering a texture to fullscreen, stored as [x y | s t]
  */
@@ -278,7 +105,18 @@ void APIENTRY opengl_error_callback(GLenum source, GLenum type, GLuint id,
     }
 }
 
-GLuint new_shader(const GLenum type, const char *src) {
+GLuint load_shader(const GLenum type, const char *filename) {
+    std::ifstream src_file(filename);
+    if (!src_file.is_open()) {
+        fprintf(stderr, "Failed to open %s\n", filename);
+        return 0;
+    }
+
+    std::stringstream buffer;
+    buffer << src_file.rdbuf();
+    std::string src_str = buffer.str();
+    const char * const src = src_str.c_str();
+
     GLuint shader = glCreateShader(type);
     const GLchar **srcaddr = (const GLchar **)&src;
     glShaderSource(shader, 1, srcaddr, NULL);
@@ -687,18 +525,32 @@ int main(int argc, char *argv[]) {
     GLfloat ssao_noise_scale[2] = { 1920.0f / (GLfloat)NOISE_SIZE_1D,
                                     1080.0f / (GLfloat)NOISE_SIZE_1D };
 
-    GLuint vert = new_shader(GL_VERTEX_SHADER, model_vert_src);
-    GLuint frag = new_shader(GL_FRAGMENT_SHADER, model_frag_src);
+    GLuint vert = load_shader(GL_VERTEX_SHADER, "model.vert.glsl");
+    if (vert == 0) {
+        ERROR("Failed to compile model.vert.glsl");
+        exit(EXIT_FAILURE);
+    }
+
+    GLuint frag = load_shader(GL_FRAGMENT_SHADER, "model.frag.glsl");
+    if (frag == 0) {
+        ERROR("Failed to compile model.frag.glsl");
+        exit(EXIT_FAILURE);
+    }
+
     GLuint shaders[2] = {vert, frag};
     GLuint model_prog = new_program(2, shaders);
+    if (model_prog == 0) {
+        ERROR("Failed to link model shader program");
+        exit(EXIT_FAILURE);
+    }
 
-    GLuint ssao_vert = new_shader(GL_VERTEX_SHADER, ssao_vert_src);
-    GLuint ssao_frag = new_shader(GL_FRAGMENT_SHADER, ssao_frag_src);
+    GLuint ssao_vert = load_shader(GL_VERTEX_SHADER, "ssao.vert.glsl");
+    GLuint ssao_frag = load_shader(GL_FRAGMENT_SHADER, "ssao.frag.glsl");
     GLuint ssao_shaders[2] = {ssao_vert, ssao_frag};
     GLuint ssao_prog = new_program(2, ssao_shaders);
 
-    GLuint blur_vert = new_shader(GL_VERTEX_SHADER, blur_vert_src);
-    GLuint blur_frag = new_shader(GL_FRAGMENT_SHADER, blur_frag_src);
+    GLuint blur_vert = load_shader(GL_VERTEX_SHADER, "blur.vert.glsl");
+    GLuint blur_frag = load_shader(GL_FRAGMENT_SHADER, "blur.frag.glsl");
     GLuint blur_shaders[2] = {blur_vert, blur_frag};
     GLuint blur_prog = new_program(2, blur_shaders);
     ERROR_OPENGL("Shader compilation and linking failed.");
